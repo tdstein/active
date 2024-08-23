@@ -110,84 +110,24 @@ class TestGetHasOneName(unittest.TestCase):
 
         assert Post.has_one == Author
 
-    def test_is_type_str(self):
+    def test_is_type_str_pascal_case(self):
 
-        with self.assertRaises(TypeError) as fails:
-            class Post(Active):
-                has_one = "Author"
-
-            assert fails
+        class Post(Active):
+            has_one = "Author"
 
         class Author(Active):
             pass
 
+        post = Post()
+        post.has_one == Author
 
-# class TestBelongsToAssociation(unittest.TestCase):
+    def test_is_type_str_snake_case(self):
 
-#     @responses.activate
-#     def test_association_get(self):
-#         class Author(Active):
-#             pass
-#         class Book(Active):
-#             belongs_to = Author
+        class Post(Active):
+            has_one = "author"
 
-#         assert hasattr(Book, "author")
+        class Author(Active):
+            pass
 
-#         author = Author(id=1)
-#         responses.get("http://localhost/authors/1", json=author)
-
-#         book = Book(author_id=1)
-#         assert book.author == author
-
-#     @responses.activate
-#     def test_association_set(self):
-
-#         class Author(Active):
-#             pass
-
-#         class Book(Author):
-#             belongs_to = Author
-
-#         assert hasattr(Book, "author")
-
-#         author = Author(id=1)
-
-#         book = Book()
-#         book.author = author
-#         assert book['author_id'] == 1
-
-#     @responses.activate
-#     def test_association_del(self):
-
-#         class Author(Active):
-#             pass
-
-#         class Book(Author):
-#             belongs_to = Author
-
-#         assert hasattr(Book, "author")
-
-#         book = Book()
-#         del book.author
-#         assert "author_id" not in book
-
-#     @responses.activate
-#     def test_association_create(self):
-
-#         class Author(Active):
-#             pass
-
-#         class Book(Author):
-#             belongs_to = Author
-
-#         assert hasattr(Book, "create_author")
-
-#         responses.post(
-#             "http://localhost/authors",
-#             json={"id": 1},
-#         )
-
-#         book = Book(id=1)
-#         author = book.create_author()
-#         assert author == {'id': 1 }
-#         assert book['author_id'] == 1
+        post = Post()
+        post.has_one == Author

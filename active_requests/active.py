@@ -1,102 +1,230 @@
-import importlib
-import inspect
-from typing import Generic, Optional, TypeVar, Union
+import re
+from typing import Optional, TypeVar, Union
 from urllib.parse import urljoin
+
+import inflection
 from requests import Session
 
-R = TypeVar("R", bound="Active", covariant=True)
+from .interpolation import interpolate
 
-class HasOneAssociation:
-    has_one: Union[str | type["Active"]]
+
+T = TypeVar("T", bound="Active", covariant=True)
+
+class ActiveBase(dict):
+    session: Session = Session()
+    url: str = "http://localhost"
+
+    name: str  # the class name in lowercase
+    path: str  # the plural name; represents the resource collection name
+    uid: str = "id"  # the unique identifier field
+
+
+class BelongsToAssociation(ActiveBase):
+
+    belongs_to: Union[str, set[str], dict[str, str]]
+    belongs_to_name: str
+    belongs_to_path: str
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        if not hasattr(self, "belongs_to"):
+            return
+
+        belongs_to = getattr(self, "belongs_to")
+        if isinstance(belongs_to, str):
+            self.__associate(belongs_to, vars(self))
+        elif isinstance(belongs_to, set):
+            for each in belongs_to:
+                self.__associate(each)
+        elif isinstance(belongs_to, dict):
+            for each, options in belongs_to.items():
+                self.__associate(each, options)
+        else:
+            raise ValueError()
+
+    def __associate(self, other, options={}):
+        belongs_to_name = options.get("belongs_to_name", other)
+        belongs_to_name = inflection.underscore(belongs_to_name)
+
+        belongs_to_plural_name = inflection.pluralize(belongs_to_name)
+
+        belongs_to_path = f"{belongs_to_plural_name}/:{belongs_to_name}_{self.uid}"
+        belongs_to_path = options.get("has_one_path", belongs_to_path)
+        belongs_to_path = interpolate(belongs_to_path, **self)
+
+        # 'comments' => 'PostComments'
+        assocation = inflection.camelize(self.name + "_" + belongs_to_name)
+        bases = (Active,)
+        Association = type(
+            assocation,
+            bases,
+            {
+                "url": self.url,
+                "session": self.session,
+                "name": belongs_to_name,
+                "path": belongs_to_path,
+            },
+        )
+
+        print(globals())
+
+        setattr(self, belongs_to_name, Association)
+
+
+class HasOneAssociation(ActiveBase):
+    has_one: Union[str, set[str], dict[str, str]]
+    has_one_name: str
     has_one_path: str
 
-    def __init_subclass__(cls: type["HasOneAssociation"]) -> None:
-        if hasattr(cls, "has_one"):
-            cls.has_one = cls.resolve_has_one()
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
 
-            if not hasattr(cls, "has_one_path"):
-                cls.has_one_path = cls.has_one.path
+        if not hasattr(cls, "has_one"):
+            return
+
+        has_one = getattr(cls, "has_one")
+        if isinstance(has_one, str):
+            cls.__associate(has_one, vars(cls))
+        elif isinstance(has_one, set):
+            for each in has_one:
+                cls.__associate(each)
+        elif isinstance(has_one, dict):
+            for each, options in has_one.items():
+                cls.__associate(each, options)
+        else:
+            raise ValueError()
 
     @classmethod
-    def resolve_has_one(cls: type["Active"]) -> type["Active"]:
-        has_one = getattr(cls, 'has_one')
-        if isinstance(has_one, str):
-            print(has_one)
-            resolved_type = cls.resolve_class(has_one)
+    def __associate(cls, other: str, options={}):
+        has_one_name = options.get("has_one_name", other)
+        has_one_name = inflection.underscore(has_one_name)
 
-            if not resolved_type:
-                raise ValueError(
-                    f"has_one reference '{has_one}' could not be resolved in globals()."
-                )
+        has_one_path = f"{cls.path}/:{cls.uid}/{has_one_name}"
+        has_one_path = options.get("has_one_path", has_one_path)
 
-            if not isinstance(resolved_type, type):
-                raise ValueError(
-                    f"has_one reference '{has_one}' resolved to '{resolved_type}', which is not a type."
-                )
+        has_one_endpoint = urljoin(cls.url, has_one_path)
 
-            if not issubclass(resolved_type, Active):
-                raise ValueError(
-                    f"has_one reference '{has_one}' resolved to '{resolved_type}', which is not a subclass of Active."
-                )
+        def fget(self):
+            endpoint = interpolate(has_one_endpoint, **self)
+            response = self.session.get(endpoint)
+            response.raise_for_status()
+            return response.json()
 
-            return resolved_type
+        def fset(self, **body):
+            endpoint = interpolate(has_one_endpoint, **self)
+            response = self.session.put(endpoint, json=body)
+            response.raise_for_status()
+            return
 
-        elif isinstance(has_one, type):
-            if not issubclass(has_one, Active):
-                raise ValueError(
-                    f"has_one type '{has_one}' is not a subclass of Active."
-                )
+        def fdel(self):
+            endpoint = interpolate(has_one_endpoint, **self)
+            response = self.session.delete(endpoint)
+            response.raise_for_status()
+            return
 
-            return has_one
+        setattr(cls, has_one_name, property(fget, fset, fdel))
 
+
+class HasManyAssociation(ActiveBase):
+
+    has_many: Union[str, set[str], dict[str, str]]
+    has_many_name: str
+    has_many_path: str
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        if not hasattr(self, "has_many"):
+            return
+
+        has_many = getattr(self, "has_many")
+        if isinstance(has_many, str):
+            self.__associate(has_many, vars(self))
+        elif isinstance(has_many, set):
+            for each in has_many:
+                self.__associate(each)
+        elif isinstance(has_many, dict):
+            for each, options in has_many.items():
+                self.__associate(each, options)
         else:
-            raise TypeError(
-                "has_one must be a string referencing a subclass of Active or a type that is a subclass of Active."
-            )
+            raise ValueError()
+
+    def __associate(self, other, options={}):
+        has_many_name = options.get("has_many_name", other)
+        has_many_name = inflection.underscore(has_many_name)
+        has_many_name = inflection.pluralize(has_many_name)
+
+        has_many_path = f"{self.path}/:{self.uid}/{has_many_name}"
+        has_many_path = options.get("has_one_path", has_many_path)
+        has_many_path = interpolate(has_many_path, **self)
+
+        # 'comments' => 'PostComments'
+        assocation = inflection.camelize(self.name + "_" + has_many_name)
+        bases = (Active,)
+        Association = type(
+            assocation,
+            bases,
+            {
+                "url": self.url,
+                "session": self.session,
+                "name": has_many_name,
+                "path": has_many_path,
+            },
+        )
+
+        setattr(self, has_many_name, Association)
 
 
-class Association(BelongsToAssociation, HasOneAssociation):
+class ActiveAssociation(HasOneAssociation, HasManyAssociation):
     pass
 
 
-class Active(Generic[R], dict, Association):
-    name: str  # the class name in lowercase
-    path: str  # the plural name; represents the resource collection name
+class Active(ActiveAssociation, ActiveBase):
+
     endpoint: str  # the url and path
 
-    session: Session = Session()
-    url: str = "http://localhost"
-    uid: str = "id"
+    def __init_subclass__(cls, url: Optional[str] = None, session: Optional[Session] = None, **kwargs):
+        # Accept URL and session as class keyword arguments
+        cls.url = url or cls.url
+        cls.session = session or cls.session
 
-    def __init_subclass__(cls, **kwargs) -> None:
-        super().__init_subclass__(**kwargs)
-        if not hasattr(cls, "name"):
-            name = cls.__name__.lower()
+        if hasattr(cls, "name"):
+            name = getattr(cls, "name")
+        else:
+            name = inflection.underscore(cls.__name__)
             setattr(cls, "name", name)
 
-        if not hasattr(cls, "path"):
-            path = name + "s"
+        if hasattr(cls, "path"):
+            path = getattr(cls, "path")
+        else:
+            path = inflection.pluralize(name)
             setattr(cls, "path", path)
 
+        # Ensure the base attributes are set before calling super().__init_subclass__()
+        # This guarantees that these attributes are derived from this class rather than the base class.
+        super().__init_subclass__(**kwargs)
+
         if not hasattr(cls, "endpoint"):
-            endpoint = urljoin(cls.url, path)
+            endpoint = urljoin(cls.url, cls.path)
             setattr(cls, "endpoint", endpoint)
 
     @classmethod
-    def all(cls: type[R]) -> list[R]:
+    def all(cls: type[T]) -> list[T]:
         response = cls.session.get(cls.endpoint)
+        response.raise_for_status()
         body = response.json()
         return [cls(**kwargs) for kwargs in body]
 
     @classmethod
-    def create(cls: type[R], **kwargs) -> R:
+    def create(cls: type[T], **kwargs) -> T:
         response = cls.session.post(cls.endpoint, json=kwargs)
         response.raise_for_status()
         body = response.json()
         return cls(**body)
 
     @classmethod
-    def find(cls: type[R], uid: str) -> R:
+    def find(cls: type[T], uid: str) -> T:
         endpoint = f"{cls.endpoint}/{uid}"
         response = cls.session.get(endpoint)
         response.raise_for_status()
@@ -104,51 +232,51 @@ class Active(Generic[R], dict, Association):
         return cls(**body)
 
     @classmethod
-    def find_by(cls: type[R], **conditions) -> Optional[R]:
+    def find_by(cls: type[T], **conditions) -> Optional[T]:
         return next(iter(cls.where(**conditions)), None)
 
     @classmethod
-    def first(cls: type[R]) -> Optional[R]:
+    def first(cls: type[T]) -> Optional[T]:
         return next(iter(cls.all()), None)
 
     @classmethod
-    def where(cls: type[R], **conditions) -> list[R]:
+    def second(cls: type[T]) -> Optional[T]:
+        return next(iter(cls.all()[1:]), None)
+
+    @classmethod
+    def third(cls: type[T]) -> Optional[T]:
+        return next(iter(cls.all()[2:]), None)
+
+    @classmethod
+    def fourth(cls: type[T]) -> Optional[T]:
+        return next(iter(cls.all()[3:]), None)
+
+    @classmethod
+    def fifth(cls: type[T]) -> Optional[T]:
+        return next(iter(cls.all()[4:]), None)
+
+    @classmethod
+    def forty_two(cls: type[T]) -> Optional[T]:
+        return next(iter(cls.all()[41:]), None)
+
+    @classmethod
+    def where(cls: type[T], **conditions) -> list[T]:
         response = cls.session.get(cls.endpoint, params=conditions)
         body = response.json()
         return [cls(**kwargs) for kwargs in body]
 
     def destroy(self) -> None:
-        endpoint = f"{self.endpoint}/{self[self.uid]}"
+        endpoint = f"{self.endpoint}/:{self.uid}"
+        endpoint = interpolate(endpoint, **self)
         response = self.session.delete(endpoint)
         response.raise_for_status()
 
     def save(self) -> None:
-        endpoint = f"{self.endpoint}/{self[self.uid]}"
+        endpoint = f"{self.endpoint}/:{self.uid}"
+        endpoint = interpolate(endpoint, **self)
         response = self.session.put(endpoint, json=self)
         response.raise_for_status()
 
     def update(self, **kwargs) -> None:
         super().update(**kwargs)
         self.save()
-
-    @classmethod
-    def resolve_class(cls, class_name: str):
-        # Get the calling module's name from the call stack
-        stack = inspect.stack()
-        caller_frame = stack[1]
-        module = inspect.getmodule(caller_frame[0])
-
-        if module is None:
-            raise ImportError("Could not determine the calling module.")
-
-        module_name = module.__name__
-
-        try:
-            # Dynamically import the module using the resolved module_name
-            module = importlib.import_module(module_name)
-            # Retrieve the class from the imported module
-            return getattr(module, class_name)
-        except (ImportError, AttributeError) as e:
-            raise ImportError(
-                f"Could not resolve class {class_name} from module {module_name}: {e}"
-            )
