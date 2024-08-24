@@ -3,8 +3,6 @@ from requests import Session
 from active_requests.active import Active
 
 
-
-
 class Client(Session):
     def __init__(self, url, api_key) -> None:
         super().__init__()
@@ -30,15 +28,15 @@ class Client(Session):
         class Tag(Active, url=url, session=self):
             path = "v1/tags"
 
-            has_one = {
-                "Tag": {
-                    "has_one_name": "parent",
-                    "has_one_path": "v1/tags/:parent_id",
+            belongs_to = {
+                "tag": {
+                    "belongs_to_name": "parent",
+                    "belongs_to_path": "v1/tags/:parent_id",
                 }
             }
 
             has_many = {
-                Content: {
+                "content": {
                     'has_many_path': 'v1/tags/:id/content'
                 },
             }
@@ -51,10 +49,6 @@ class Client(Session):
 
 if __name__ == "__main__":
     c = Client("https://rsc.radixu.com/__api__/", "pYFqLjm5idHnr9zruRz8ANdaSlaH8fe5")
-    content = c.content.second()
-    print(content)
-    bundle = content.bundles.first()
-    print(bundle)
 
     tag = c.tag.find_by(name="qwrqwr")
     print(tag)

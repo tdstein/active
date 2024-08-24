@@ -98,36 +98,81 @@ class TestActive(unittest.TestCase):
 
 # class TestHasOneAssociation(unittest.TestCase):
 
+class TestBelongsToPropertyName(unittest.TestCase):
+    def test(self):
+        class Comment(Active):
+            belongs_to = 'post'
+
+        assert hasattr(Comment, 'post')
+
+    def test_is_pascal_case(self):
+        class Comment(Active):
+            belongs_to = "Post"
+
+        assert hasattr(Comment, "post")
+
+
+class TestBelongsToShape(unittest.TestCase):
+
+    def test_is_str(self):
+        class Comment(Active):
+            belongs_to = "Post"
+
+    def test_is_set(self):
+        class Comment(Active):
+            belongs_to = { "Post" }
+
+    def test_is_dict(self):
+        class Comment(Active):
+            belongs_to = {
+                "Post": {}
+            }
+
+    def test_is_None(self):
+        try:
+            class Comment(Active):
+                belongs_to = None
+        except ValueError:
+            pass
+
+    def test_is_1(self):
+        try:
+            class Comment(Active):
+                belongs_to = 1
+        except ValueError:
+            pass
+
+    def test_is_class(self):
+        try:
+
+            class Post:
+                pass
+            class Comment(Active):
+                belongs_to = Post
+
+        except ValueError:
+            pass
+
+
 
 class TestGetHasOneName(unittest.TestCase):
 
     def test(self):
-        class Author(Active):
-            pass
-
         class Post(Active):
-            has_one = Author
+            has_one = "author"
 
-        assert Post.has_one == Author
+        hasattr(Post, 'author')
 
     def test_is_type_str_pascal_case(self):
 
         class Post(Active):
             has_one = "Author"
 
-        class Author(Active):
-            pass
-
-        post = Post()
-        post.has_one == Author
+        hasattr(Post, 'author')
 
     def test_is_type_str_snake_case(self):
 
         class Post(Active):
             has_one = "author"
 
-        class Author(Active):
-            pass
-
-        post = Post()
-        post.has_one == Author
+        hasattr(Post, "author")

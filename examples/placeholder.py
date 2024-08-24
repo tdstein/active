@@ -4,7 +4,8 @@ Active.url = "http://jsonplaceholder.typicode.com"
 
 
 class Post(Active):
-    belongs_to = {"user": {"belongs_to_path": "users/:userId"}}
+    belongs_to = "user"
+    belongs_to_path = "/users/:userId"
 
     has_many = "Comment"
 
@@ -31,5 +32,6 @@ class User(Active):
     has_many = {"Album", "Post", "Todo"}
 
 
-user = User.first()
-photo = user.albums.first()
+for post in Post.all()[::10]:
+    print(post['id'])
+    print(post.user.posts.first()['id'])
