@@ -17,13 +17,24 @@ class Client(Session):
             name = "content"
             path = "v1/content"
 
-            has_many = { "Bundle", "Permission", "Job" }
+            has_many = { "bundle", "permission", "job" }
+
+            has_one = "vanity"
+
+        class Environment(Active, url=url, session=self):
+            path = "v1/environments"
+
+        class Example(Active, url=url, session=self):
+            path = 'v1/examples'
 
         class Job(Active, url=url, session=self):
             uid = "key"
 
         class Permission(Active, url=url, session=self):
             path = "v1/permissions"
+
+        class OAuthSessions(Active, url=url, session=self):
+            path = "v1/oauth/sessions"
 
         class Tag(Active, url=url, session=self):
             path = "v1/tags"
@@ -35,26 +46,31 @@ class Client(Session):
                 }
             }
 
-            has_many = {
-                "content": {
-                    'has_many_path': 'v1/tags/:id/content'
-                },
-            }
+            has_many = "content"
+            has_many_name = "content"
 
-        self.bundle = Bundle
+        class Vanity(Active, url=url, session=self):
+            path = "v1/vanities"
+
+        self.bundles = Bundle
         self.content = Content
-        self.permission = Permission
-        self.tag = Tag
+        self.environments = Environment
+        self.examples = Example
+        self.permissions = Permission
+        self.sessions = OAuthSessions
+        self.tags = Tag
+        self.vanities = Vanity
 
 
 if __name__ == "__main__":
     c = Client("https://rsc.radixu.com/__api__/", "pYFqLjm5idHnr9zruRz8ANdaSlaH8fe5")
 
-    tag = c.tag.find_by(name="qwrqwr")
-    print(tag)
-    print(tag)
-    print(tag.parent)
-    print(tag.parent.parent)
-    print(tag.parent.parent.parent)
-    print(tag.parent.parent.parent.parent)
-    print(tag.parent.parent.parent.parent.parent)
+    content = c.content.find("8ea6fb4a-8fb3-4c22-8c64-a152789d2c23")
+    print(content)
+    print(content.vanity)
+    print(c.sessions.all())
+    # print(tag.parent)
+    # print(tag.parent.parent)
+    # print(tag.parent.parent.parent)
+    # print(tag.parent.parent.parent.parent)
+    # print(tag.parent.parent.parent.parent.parent)

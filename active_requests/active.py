@@ -1,3 +1,4 @@
+import copy
 from typing import Callable, Optional, TypeVar, TypedDict, Union
 from urllib.parse import urljoin
 
@@ -54,7 +55,7 @@ class ActiveBase(dict):
 
     name: str
     path: str
-    uid_field: str = "id"
+    uid: str = "id"
 
 
 class BelongsToOptions(TypedDict, total=False):
@@ -106,11 +107,11 @@ Type alias representing the structure of an association definition.
 
 - **str**: A single association, represented by a string (e.g., `"author"`).
 - **set[str]**: Multiple associations, represented by a set of strings (e.g., `{"author", "publisher"}`).
-- **dict[str, dict]**: Associations with options, where the key is the association name and the value is the option set (e.g., `{"author": {}}`).
+- **dict[str, AssociationOptions]**: Associations with options, where the key is the association name and the value is the option set (e.g., `{"author": {}}`).
 """
 
 
-class AssocationBase:
+class AssociationBase:
     """
     Base class for handling associations.
     """
@@ -119,29 +120,29 @@ class AssocationBase:
     def _associate(
         cls,
         association: AssociationDef,
-        assocate_method: Callable[[str, AssociationOptions], None],
+        associate_method: Callable[[str, Optional[AssociationOptions]], None],
     ):
         """
         Associate attributes based on the type of association.
 
         :param association: The association definition, which can be a string, set of strings, or a dictionary.
         :type association: AssociationDef
-        :param assocate_method: The method to call for associating.
-        :type assocate_method: Callable[[str, dict], None]
+        :param associate_method: The method to call for associating.
+        :type associate_method: Callable[[str, Optional[AssociationOptions]], None]
         """
         if isinstance(association, str):
-            assocate_method(association, vars(cls))
+            associate_method(association, vars(cls))
 
         if isinstance(association, set):
             for each in association:
-                assocate_method(each)
+                associate_method(each)
 
         if isinstance(association, dict):
             for each, options in association.items():
-                assocate_method(each, options)
+                associate_method(each, options)
 
 
-class BelongsToAssociation(ActiveBase, AssocationBase):
+class BelongsToAssociation(ActiveBase, AssociationBase):
     """
     Represents a 'belongs_to' association.
 
@@ -150,7 +151,7 @@ class BelongsToAssociation(ActiveBase, AssocationBase):
     :cvar belongs_to_path: The path to the associated resource.
     """
 
-    belongs_to: Union[str, set[str], dict[str, str]]
+    belongs_to: Union[str, set[str], dict[str, BelongsToOptions]]
     belongs_to_name: str
     belongs_to_path: str
 
@@ -159,8 +160,8 @@ class BelongsToAssociation(ActiveBase, AssocationBase):
         Automatically associate the 'belongs_to' relationship when subclassing.
         """
         super().__init_subclass__()
-        if hasattr(cls, 'belongs_to'):
-            belongs_to = getattr(cls, 'belongs_to')
+        if hasattr(cls, "belongs_to"):
+            belongs_to = getattr(cls, "belongs_to")
             cls._associate(belongs_to, cls.__associate)
 
     @classmethod
@@ -171,7 +172,7 @@ class BelongsToAssociation(ActiveBase, AssocationBase):
         :param other: The other resource to associate with.
         :type other: str
         :param options: Additional options for the association.
-        :type options: dict
+        :type options: BelongsToOptions
         """
         other = inflection.underscore(other)
         belongs_to_name = options.get("belongs_to_name", other)
@@ -179,7 +180,7 @@ class BelongsToAssociation(ActiveBase, AssocationBase):
 
         belongs_to_name_plural = inflection.pluralize(belongs_to_name)
 
-        belongs_to_path = f"{belongs_to_name_plural}/:{belongs_to_name}_{cls.uid_field}"
+        belongs_to_path = f"{belongs_to_name_plural}/:{belongs_to_name}_{cls.uid}"
         belongs_to_path = options.get("belongs_to_path", belongs_to_path)
 
         def fget(self):
@@ -211,7 +212,7 @@ class BelongsToAssociation(ActiveBase, AssocationBase):
         setattr(cls, belongs_to_name, property(fget, fset, fdel))
 
 
-class HasOneAssociation(ActiveBase, AssocationBase):
+class HasOneAssociation(ActiveBase, AssociationBase):
     """
     Represents a 'has_one' association.
 
@@ -220,7 +221,7 @@ class HasOneAssociation(ActiveBase, AssocationBase):
     :cvar has_one_path: The path to the associated resource.
     """
 
-    has_one: Union[str, set[str], dict[str, str]]
+    has_one: Union[str, set[str], dict[str, HasOneOptions]]
     has_one_name: str
     has_one_path: str
 
@@ -241,13 +242,12 @@ class HasOneAssociation(ActiveBase, AssocationBase):
         :param other: The other resource to associate with.
         :type other: str
         :param options: Additional options for the association.
-        :type options: dict
+        :type options: HasOneOptions
         """
         other = inflection.underscore(other)
         has_one_name = options.get("has_one_name", other)
 
-        print(cls)
-        has_one_path = f"{cls.path}/:{cls.uid_field}/{has_one_name}"
+        has_one_path = f"{cls.path}/:{cls.uid}/{has_one_name}"
         has_one_path = options.get("has_one_path", has_one_path)
 
         has_one_endpoint = urljoin(cls.url, has_one_path)
@@ -275,7 +275,7 @@ class HasOneAssociation(ActiveBase, AssocationBase):
         setattr(cls, has_one_name, property(fget, fset, fdel))
 
 
-class HasManyAssociation(ActiveBase, AssocationBase):
+class HasManyAssociation(ActiveBase, AssociationBase):
     """
     Represents a 'has_many' association.
 
@@ -297,40 +297,41 @@ class HasManyAssociation(ActiveBase, AssocationBase):
             has_many = getattr(self, "has_many")
             self._associate(has_many, self.__associate)
 
-    def __associate(self, other, options : HasManyOptions ={ }):
+    def __associate(self, other: str, options: HasManyOptions = {}):
         """
         Associate a 'has_many' relationship.
 
         :param other: The other resource to associate with.
         :type other: str
         :param options: Additional options for the association.
-        :type options: dict
+        :type options: HasManyOptions
         """
-        other = inflection.underscore(other)
-        has_many_name = options.get("has_many_name", other)
-        has_many_name_plural = inflection.pluralize(has_many_name)
 
-        has_many_path = f"{self.path}/:{self.uid_field}/{has_many_name_plural}"
+        other = inflection.underscore(other)
+        other_plural = inflection.pluralize(other)
+        has_many_name = options.get("has_many_name", other_plural)
+
+        has_many_path = f"{self.path}/:{self.uid}/{has_many_name}"
+        print(has_many_path)
         has_many_path = options.get("has_many_path", has_many_path)
         has_many_path = interpolate(has_many_path, **self)
 
+        association_name = inflection.camelize(self.name + "_" + has_many_name)
         Association = resolve(other)
-        if Association is None:
-            # 'comments' => 'PostComments'
-            assocation = inflection.camelize(self.name + "_" + has_many_name)
-            bases = (Active,)
-            Association = type(
-                assocation,
-                bases,
-                {
-                    "url": self.url,
-                    "session": self.session,
-                    "name": has_many_name,
-                    "path": has_many_path,
-                },
-            )
+        bases = Association.__bases__ if Association else (Active,)
+        Association = type(
+            association_name,
+            bases,
+            {
+                **vars(Association),
+                "url": self.url,
+                "session": self.session,
+                "name": has_many_name,
+                "path": has_many_path,
+            },
+        )
 
-        setattr(self, has_many_name_plural, Association)
+        setattr(self, has_many_name, Association)
 
 
 class ActiveAssociation(BelongsToAssociation, HasOneAssociation, HasManyAssociation):
@@ -519,7 +520,7 @@ class Active(ActiveAssociation, ActiveBase):
         """
         Destroy the resource in the API.
         """
-        endpoint = f"{self.endpoint}/:{self.uid_field}"
+        endpoint = f"{self.endpoint}/:{self.uid}"
         endpoint = interpolate(endpoint, **self)
         response = self.session.delete(endpoint)
         response.raise_for_status()
@@ -528,7 +529,7 @@ class Active(ActiveAssociation, ActiveBase):
         """
         Save the resource to the API.
         """
-        endpoint = f"{self.endpoint}/:{self.uid_field}"
+        endpoint = f"{self.endpoint}/:{self.uid}"
         endpoint = interpolate(endpoint, **self)
         response = self.session.put(endpoint, json=self)
         response.raise_for_status()
