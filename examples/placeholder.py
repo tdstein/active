@@ -1,3 +1,4 @@
+from typing import overload
 from active_requests import Active
 
 Active.url = "http://jsonplaceholder.typicode.com"
@@ -32,6 +33,6 @@ class User(Active):
     has_many = {"Album", "Post", "Todo"}
 
 
-for post in Post.all()[::10]:
+for post in Post.all()[::5]:
     print(post['id'])
     print(post.user.posts.first()['id'])

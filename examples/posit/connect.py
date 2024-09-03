@@ -1,76 +1,75 @@
+from http import client
+import os
 from requests import Session
 
 from active_requests.active import Active
 
+api_key = os.environ["CONNECT_API_KEY"]
 
-class Client(Session):
-    def __init__(self, url, api_key) -> None:
-        super().__init__()
+session = Session()
+session.headers.update({"Authorization": f"Key {api_key}"})
 
-        self.headers.update({"Authorization": f"Key {api_key}"})
+Active.url = "https://rsc.radixu.com/__api__/"
+Active.session = session
 
-        class Bundle(Active, url=url, session=self):
-            "v1/bundles"
+class Bundle(Active):
+    path = "v1/bundles"
 
-        class Content(Active, url=url, session=self):
-            uid = "guid"
-            name = "content"
-            path = "v1/content"
+class Content(Active):
+    name = "content"
+    path = "v1/content"
+    uid = "guid"
 
-            has_many = { "bundle", "permission", "job" }
+    has_many = { "bundle", "permission", "job", "tags" }
 
-            has_one = "vanity"
+    has_one = "vanity"
 
-        class Environment(Active, url=url, session=self):
-            path = "v1/environments"
 
-        class Example(Active, url=url, session=self):
-            path = 'v1/examples'
+class Environment(Active):
+    path = "v1/environments"
 
-        class Job(Active, url=url, session=self):
-            uid = "key"
+class Example(Active):
+    path = 'v1/examples'
 
-        class Permission(Active, url=url, session=self):
-            path = "v1/permissions"
+class Job(Active):
+    uid = "key"
 
-        class OAuthSessions(Active, url=url, session=self):
-            path = "v1/oauth/sessions"
+class Permission(Active):
+    path = "v1/permissions"
 
-        class Tag(Active, url=url, session=self):
-            path = "v1/tags"
+class OAuthSessions(Active):
+    path = "v1/oauth/sessions"
 
-            belongs_to = {
-                "tag": {
-                    "belongs_to_name": "parent",
-                    "belongs_to_path": "v1/tags/:parent_id",
-                }
-            }
+class Tag(Active):
+    path = "v1/tags"
 
-            has_many = "content"
-            has_many_name = "content"
+    belongs_to = {
+        "tag": {
+            "belongs_to_name": "parent",
+            "belongs_to_path": "v1/tags/:parent_id",
+        }
+    }
 
-        class Vanity(Active, url=url, session=self):
-            path = "v1/vanities"
+    has_many = "content"
+    has_many_name = "content"
 
-        self.bundles = Bundle
-        self.content = Content
-        self.environments = Environment
-        self.examples = Example
-        self.permissions = Permission
-        self.sessions = OAuthSessions
-        self.tags = Tag
-        self.vanities = Vanity
+class Vanity(Active):
+
+    belongs_to = "Content"
+    belongs_to_path = "v1/content/:content_guid"
 
 
 if __name__ == "__main__":
-    c = Client("https://rsc.radixu.com/__api__/", "pYFqLjm5idHnr9zruRz8ANdaSlaH8fe5")
 
-    content = c.content.find("8ea6fb4a-8fb3-4c22-8c64-a152789d2c23")
-    print(content)
-    print(content.vanity)
-    print(c.sessions.all())
-    # print(tag.parent)
-    # print(tag.parent.parent)
-    # print(tag.parent.parent.parent)
-    # print(tag.parent.parent.parent.parent)
-    # print(tag.parent.parent.parent.parent.parent)
+    client.content.find()
+
+    content = Content.find_by(title="Developing Machine Learning Models with Airflow and Posit Connect")
+    content.vanity = { "path": "developing-machine-learning-models-with-airflow-and-posit-connect"}
+    print(content.vanity.content['title'])
+
+    tags = content.tags.all()
+    for tag in tags:
+        print(tag['name'])
+
+    bundle = content.bundles.first()
+    print(bundle["created_time"])
